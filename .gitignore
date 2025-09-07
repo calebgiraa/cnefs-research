@@ -1,0 +1,23 @@
+sam_vit_h_4b8939.pth
+*.pth
+*.ckpt
+*.ipynb_checkpoints/
+*.las
+
+# Ignore large video files in the videos/ directory
+# These are downloaded during the Docker build process
+stella_vslam/videos/
+
+# Ignore Stella VSLAM specific output files
+*.msg # For Stella VSLAM map database output
+
+# Ignore Docker-related files that shouldn't be committed
+.dockerignore
+
+# Ignore all images in the Datasets directory
+NFOD_v2/Datasets/**/*.jpg
+NFOD_v2/Datasets/**/*.jpeg
+NFOD_v2/Datasets/**/*.png
+NFOD_v2/Datasets/**/*.gif
+NFOD_v2/Datasets/**/*.bmp
+NFOD_v2/Datasets/**/*.tiff
