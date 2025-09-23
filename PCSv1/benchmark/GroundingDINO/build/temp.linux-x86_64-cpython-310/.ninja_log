@@ -1,0 +1,5 @@
+# ninja log v5
+1	1629	1758644658243677138	/home/cmgira/cnefs-research/PCSv1/benchmark/GroundingDINO/build/temp.linux-x86_64-cpython-310/home/cmgira/cnefs-research/PCSv1/benchmark/GroundingDINO/groundingdino/models/GroundingDINO/csrc/cuda_version.o	2a8e116a592f9adb
+0	6877	1758644663455709896	/home/cmgira/cnefs-research/PCSv1/benchmark/GroundingDINO/build/temp.linux-x86_64-cpython-310/home/cmgira/cnefs-research/PCSv1/benchmark/GroundingDINO/groundingdino/models/GroundingDINO/csrc/MsDeformAttn/ms_deform_attn_cpu.o	64c6b3a2683a4079
+1	19910	1758644676475791732	/home/cmgira/cnefs-research/PCSv1/benchmark/GroundingDINO/build/temp.linux-x86_64-cpython-310/home/cmgira/cnefs-research/PCSv1/benchmark/GroundingDINO/groundingdino/models/GroundingDINO/csrc/vision.o	f8ff33e4f39e4101
+1	23890	1758644680475816873	/home/cmgira/cnefs-research/PCSv1/benchmark/GroundingDINO/build/temp.linux-x86_64-cpython-310/home/cmgira/cnefs-research/PCSv1/benchmark/GroundingDINO/groundingdino/models/GroundingDINO/csrc/MsDeformAttn/ms_deform_attn_cuda.o	7fcf4119d5cdb337
