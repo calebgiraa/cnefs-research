@@ -1,0 +1,2 @@
+Paste the link below into a browser to install the model for Grounded SAM
+https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
