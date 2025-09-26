@@ -34,7 +34,6 @@ def setup_groundingdino():
     if not os.path.exists(grounding_path):
         print("GroundingDINO repository not found. Cloning...")
         try:
-            # Using subprocess to run git clone
             subprocess.run(["git", "clone", "https://github.com/IDEA-Research/GroundingDINO.git"], check=True)
             print("Cloning complete.")
         except subprocess.CalledProcessError as e:
@@ -43,19 +42,15 @@ def setup_groundingdino():
     else:
         print("GroundingDINO repository found.")
 
-    # Add GroundingDINO to the system path
     sys.path.append(os.path.join(os.getcwd(), "GroundingDINO"))
 
-# Call setup right away to make other imports work
 setup_groundingdino()
 
-# Now we can import from GroundingDINO
 from GroundingDINO.groundingdino.models import build_model
 from GroundingDINO.groundingdino.util.slconfig import SLConfig
 from GroundingDINO.groundingdino.util.utils import clean_state_dict
 from GroundingDINO.groundingdino.util.inference import annotate, load_image, predict
 from GroundingDINO.groundingdino.util import box_ops
-
 
 def load_model_hf(repo_id, filename, ckpt_config_filename, device='cpu'):
     """Helper function to load the GroundingDINO model from Hugging Face."""
@@ -70,13 +65,11 @@ def load_model_hf(repo_id, filename, ckpt_config_filename, device='cpu'):
     model.eval()
     return model
 
-def show_mask(mask, image, random_color=True):
-    """Helper function to apply a mask to an image."""
-    if random_color:
-        color = np.concatenate([np.random.random(3), np.array([0.8])], axis=0)
-    else:
-        color = np.array([30/255, 144/255, 255/255, 0.6])
-    
+def apply_mask_to_image(mask, image, color):
+    """
+    Helper function to apply a mask to an image with a specified color.
+    The 'color' should be a NumPy array [R, G, B, Alpha].
+    """
     h, w = mask.shape[-2:]
     mask = mask.cpu()
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
@@ -88,13 +81,10 @@ def show_mask(mask, image, random_color=True):
 
 def main(args):
     """Main execution function."""
-    # Setup device
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {DEVICE}")
-    DEVICE = torch.device('cpu')
 
-    # --- Load Models ---
     print("Loading GroundingDINO model...")
     groundingdino_model = load_model_hf(
         "ShilongLiu/GroundingDINO",
@@ -107,19 +97,17 @@ def main(args):
     sam_checkpoint_path = "model/sam_vit_h_4b8939.pth"
     if not os.path.exists(sam_checkpoint_path):
         print(f"SAM checkpoint not found at {sam_checkpoint_path}")
-        print("Please download it and place it in the 'model' directory.")
         sys.exit(1)
         
     sam = build_sam(checkpoint=sam_checkpoint_path)
     sam.to(device=DEVICE)
     sam_predictor = SamPredictor(sam)
 
-    # --- Load Image ---
     print(f"Loading image from: {args.input_image}")
     image_source, image = load_image(args.input_image)
+    MAX_IMAGE_DIM = 1024
     H, W, _ = image_source.shape
 
-    # --- Run Detection ---
     print(f"Detecting objects with prompt: '{args.text_prompt}'")
     boxes, logits, phrases = predict(
         model=groundingdino_model,
@@ -130,67 +118,94 @@ def main(args):
         device=DEVICE
     )
 
-    # --- Run Segmentation ---
     print("Running segmentation on detected objects...")
     sam_predictor.set_image(image_source)
     boxes_xyxy = box_ops.box_cxcywh_to_xyxy(boxes) * torch.Tensor([W, H, W, H])
     transformed_boxes = sam_predictor.transform.apply_boxes_torch(boxes_xyxy, image_source.shape[:2]).to(DEVICE)
     
-    masks, _, _ = sam_predictor.predict_torch(
+    masks, iou_pred, _ = sam_predictor.predict_torch(
         point_coords=None,
         point_labels=None,
         boxes=transformed_boxes,
-        multimask_output=True,
+        multimask_output=True, # Keep True for multiple mask options
     )
 
-    # --- Annotate and Save Image ---
-    print("Annotating image with masks...")
-    # Using supervision to draw boxes
-    annotated_frame = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
-    annotated_frame = annotated_frame[..., ::-1] # BGR to RGB
+    print("Annotating image with masks and bounding boxes...")
+    
+    # Start with the original image for applying masks
+    annotated_frame_with_mask = Image.fromarray(image_source).convert("RGBA")
+    annotated_frame_with_mask = np.array(annotated_frame_with_mask) # Convert back to numpy
 
-    annotated_frame_with_mask = annotated_frame.copy()
-    for mask in masks:
-        # We take the first mask from the multimask output
-        annotated_frame_with_mask = show_mask(mask[0], annotated_frame_with_mask)
+    # Define color map for different objects
+    color_map = {
+        "pipe": np.array([30/255, 144/255, 255/255, 0.6]),      # Blue for pipe
+        "defect": np.array([255/255, 0/255, 0/255, 0.7]),        # Red for defect
+    }
+    default_color = np.array([0/255, 255/255, 0/255, 0.6]) # Green for anything else
 
-    # Create output directory if it doesn't exist
+
+    detections_to_draw = []
+    if boxes.shape[0] > 0:
+        for i in range(boxes.shape[0]):
+            phrase = phrases[i]
+            
+            # Select the best mask out of the 3 options using IoU prediction
+            best_mask_idx = torch.argmax(iou_pred[i]).item()
+            selected_mask = masks[i, best_mask_idx]
+            
+            detections_to_draw.append((phrase, i, selected_mask))
+
+        def get_draw_order_priority(phrase):
+            if "pipe" in phrase: return 0 # Draw pipe first (bottom layer)
+            if "defect" in phrase: return 1 # Draw defect second (on top)
+            return 99 # Anything else last
+
+        detections_to_draw.sort(key=lambda x: get_draw_order_priority(x[0]))
+        
+        for phrase, original_box_idx, selected_mask in detections_to_draw:
+            color = color_map.get(phrase, default_color)
+            
+            # Apply the mask with the chosen color
+            annotated_frame_with_mask = apply_mask_to_image(selected_mask, annotated_frame_with_mask, color)
+    else:
+        print("No objects detected for the given prompt and thresholds.")
+    
+    # MODIFICATION: Apply bounding box annotation *after* masks have been drawn
+    # The 'annotate' function expects a BGR image, so convert before passing.
+    # It also outputs BGR, so convert back to RGB for saving.
+    annotated_frame_with_mask_bgr = annotated_frame_with_mask[..., ::-1] # RGB to BGR
+    final_annotated_image = annotate(
+        image_source=annotated_frame_with_mask_bgr, 
+        boxes=boxes, 
+        logits=logits, 
+        phrases=phrases
+    )
+    final_annotated_image = final_annotated_image[..., ::-1] # BGR to RGB
+
+
     os.makedirs(args.output_dir, exist_ok=True)
     
-    # Construct output path
     base_name = os.path.basename(args.input_image)
     name, ext = os.path.splitext(base_name)
-    output_path = os.path.join(args.output_dir, f"{name}_annotated.png")
+    output_path = os.path.join(args.output_dir, f"{name}_multi_annotated_with_boxes.png") # New filename
 
-    # Save the final image
-    final_image_pil = Image.fromarray(annotated_frame_with_mask)
+    final_image_pil = Image.fromarray(final_annotated_image) # Use the image with boxes
     final_image_pil.save(output_path)
     
-    print(f"✅ Annotated image saved successfully to: {output_path}")
+    print(f"✅ Annotated image with masks and bounding boxes saved successfully to: {output_path}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("GroundingDINO-SAM Object Detection and Segmentation")
+    parser = argparse.ArgumentParser("GroundingDINO-SAM Multi-Object Segmentation")
+    
+    parser.add_argument("input_image", type=str, help="Path to the input image file.")
+    parser.add_argument("output_dir", type=str, help="Directory where the annotated image will be saved.")
     
     parser.add_argument(
-        "input_image", type=str,
-        help="Path to the input image file."
+        "--text_prompt", type=str, default="pipe . defect",
+        help="Text prompt for objects to detect, separated by ' . '."
     )
-    parser.add_argument(
-        "output_dir", type=str,
-        help="Directory where the annotated image will be saved."
-    )
-    parser.add_argument(
-        "--text_prompt", type=str, default="hole within pipe",
-        help="Text prompt for the object to detect."
-    )
-    parser.add_argument(
-        "--box_threshold", type=float, default=0.3,
-        help="Box confidence threshold for detection."
-    )
-    parser.add_argument(
-        "--text_threshold", type=float, default=0.25,
-        help="Text confidence threshold for detection."
-    )
+    parser.add_argument("--box_threshold", type=float, default=0.35, help="Box confidence threshold.")
+    parser.add_argument("--text_threshold", type=float, default=0.28, help="Text confidence threshold.")
     
     args = parser.parse_args()
     main(args)
