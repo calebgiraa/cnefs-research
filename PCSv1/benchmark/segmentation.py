@@ -1,75 +1,102 @@
-import os
-import sys
-import subprocess
-import argparse
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-import io
+import os, sys
 
-# PyTorch and related imports
-import torch
+sys.path.append(os.path.join(os.getcwd(), "GroundingDINO"))
+
+import argparse
+import copy
+
+from IPython.display import display
+from PIL import Image, ImageDraw, ImageFont
 from torchvision.ops import box_convert
 
 # Grounding DINO
-# Must be imported after the setup_groundingdino() call
-# which adds the directory to sys.path.
+import GroundingDINO.groundingdino.datasets.transforms as T
+from GroundingDINO.groundingdino.models import build_model
+from GroundingDINO.groundingdino.util import box_ops
+from GroundingDINO.groundingdino.util.slconfig import SLConfig
+from GroundingDINO.groundingdino.util.utils import clean_state_dict, get_phrases_from_posmap
+from GroundingDINO.groundingdino.util.inference import annotate, load_image, predict
 
-# segment anything
-from segment_anything import build_sam, SamPredictor
-
-# diffusers
-from diffusers import StableDiffusionInpaintPipeline
-from huggingface_hub import hf_hub_download
-
-# supervision (for annotation)
 import supervision as sv
 
-def setup_groundingdino():
-    """
-    Checks for the GroundingDINO repository. If not found, it clones it.
-    It then adds the repository to the Python path.
-    """
-    grounding_path = "GroundingDINO"
-    
-    if not os.path.exists(grounding_path):
-        print("GroundingDINO repository not found. Cloning...")
-        try:
-            subprocess.run(["git", "clone", "https://github.com/IDEA-Research/GroundingDINO.git"], check=True)
-            print("Cloning complete.")
-        except subprocess.CalledProcessError as e:
-            print(f"Error cloning repository: {e}")
-            sys.exit(1)
-    else:
-        print("GroundingDINO repository found.")
+# segment anything
+from segment_anything import build_sam, SamPredictor 
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
 
-    sys.path.append(os.path.join(os.getcwd(), "GroundingDINO"))
 
-setup_groundingdino()
+# diffusers
+import PIL
+import requests
+import torch
+from io import BytesIO
+from diffusers import StableDiffusionInpaintPipeline
 
-from GroundingDINO.groundingdino.models import build_model
-from GroundingDINO.groundingdino.util.slconfig import SLConfig
-from GroundingDINO.groundingdino.util.utils import clean_state_dict
-from GroundingDINO.groundingdino.util.inference import annotate, load_image, predict
-from GroundingDINO.groundingdino.util import box_ops
+
+from huggingface_hub import hf_hub_download
+
+DEVICE = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+MODEL_TYPE = "vit_h"
 
 def load_model_hf(repo_id, filename, ckpt_config_filename, device='cpu'):
-    """Helper function to load the GroundingDINO model from Hugging Face."""
     cache_config_file = hf_hub_download(repo_id=repo_id, filename=ckpt_config_filename)
-    args = SLConfig.fromfile(cache_config_file)
-    model = build_model(args)
-    args.device = device
-    cache_file = hf_hub_download(repo_id=repo_id, filename=filename)
-    checkpoint = torch.load(cache_file, map_location='cpu')
-    log = model.load_state_dict(clean_state_dict(checkpoint['model']), strict=False)
-    print(f"Model loaded from {cache_file} \n => {log}")
-    model.eval()
-    return model
 
-def apply_mask_to_image(mask, image, color):
-    """
-    Helper function to apply a mask to an image with a specified color.
-    The 'color' should be a NumPy array [R, G, B, Alpha].
-    """
+    args = SLConfig.fromfile(cache_config_file) 
+    args.device = DEVICE
+    model = build_model(args)
+    
+    cache_file = hf_hub_download(repo_id=repo_id, filename=filename)
+    checkpoint = torch.load(cache_file, map_location=DEVICE)
+    log = model.load_state_dict(clean_state_dict(checkpoint['model']), strict=False)
+    print("Model loaded from {} \n => {}".format(cache_file, log))
+    _ = model.eval()
+    return model   
+ckpt_repo_id = "ShilongLiu/GroundingDINO"
+ckpt_filenmae = "groundingdino_swinb_cogcoor.pth"
+ckpt_config_filename = "GroundingDINO_SwinB.cfg.py"
+
+
+groundingdino_model = load_model_hf(ckpt_repo_id, ckpt_filenmae, ckpt_config_filename, DEVICE)
+
+sam_checkpoint = 'model/sam_vit_h_4b8939.pth'
+sam_predictor = SamPredictor(build_sam(checkpoint=sam_checkpoint).to(DEVICE))
+
+# # detect object using grounding DINO
+# def detect(image, text_prompt, model, box_threshold = 0.3, text_threshold = 0.25):
+#   boxes, logits, phrases = predict(
+#       model=model, 
+#       image=image, 
+#       caption=text_prompt,
+#       box_threshold=box_threshold,
+#       text_threshold=text_threshold
+#   )
+
+#   annotated_frame = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
+#   annotated_frame = annotated_frame[...,::-1] # BGR to RGB 
+#   return annotated_frame, boxes 
+# annotated_frame, detected_boxes = detect(image, text_prompt="bench", model=groundingdino_model)
+# Image.fromarray(annotated_frame)
+
+# def segment(image, sam_model, boxes):
+#   sam_model.set_image(image)
+#   H, W, _ = image.shape
+#   boxes_xyxy = box_ops.box_cxcywh_to_xyxy(boxes) * torch.Tensor([W, H, W, H])
+
+#   transformed_boxes = sam_model.transform.apply_boxes_torch(boxes_xyxy.to(device), image.shape[:2])
+#   masks, _, _ = sam_model.predict_torch(
+#       point_coords = None,
+#       point_labels = None,
+#       boxes = transformed_boxes,
+#       multimask_output = False,
+#       )
+#   return masks.cpu()
+
+def draw_mask(mask, image, random_color=True):
+    if random_color:
+        color = np.concatenate([np.random.random(3), np.array([0.8])], axis=0)
+    else:
+        color = np.array([30/255, 144/255, 255/255, 0.6])
     h, w = mask.shape[-2:]
     mask = mask.cpu()
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
@@ -80,119 +107,54 @@ def apply_mask_to_image(mask, image, color):
     return np.array(Image.alpha_composite(annotated_frame_pil, mask_image_pil))
 
 def main(args):
-    """Main execution function."""
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-    DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {DEVICE}")
+    image_path = args.input_image
+    image_bgr = cv2.imread(image_path)
+    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
-    print("Loading GroundingDINO model...")
-    groundingdino_model = load_model_hf(
-        "ShilongLiu/GroundingDINO",
-        "groundingdino_swinb_cogcoor.pth",
-        "GroundingDINO_SwinB.cfg.py",
-        device=DEVICE
-    )
+    prompt = args.text_prompt
+    box_threshold = 0.3
+    text_threshold = 0.25
 
-    print("Loading Segment Anything Model (SAM)...")
-    sam_checkpoint_path = "model/sam_vit_h_4b8939.pth"
-    if not os.path.exists(sam_checkpoint_path):
-        print(f"SAM checkpoint not found at {sam_checkpoint_path}")
-        sys.exit(1)
-        
-    sam = build_sam(checkpoint=sam_checkpoint_path)
-    sam.to(device=DEVICE)
-    sam_predictor = SamPredictor(sam)
+    image_source, image = load_image(image_path)
 
-    print(f"Loading image from: {args.input_image}")
-    image_source, image = load_image(args.input_image)
-    MAX_IMAGE_DIM = 1024
-    H, W, _ = image_source.shape
-
-    print(f"Detecting objects with prompt: '{args.text_prompt}'")
     boxes, logits, phrases = predict(
         model=groundingdino_model,
         image=image,
-        caption=args.text_prompt,
-        box_threshold=args.box_threshold,
-        text_threshold=args.text_threshold,
+        caption=prompt,
+        box_threshold=box_threshold,
+        text_threshold=text_threshold,
         device=DEVICE
     )
 
-    print("Running segmentation on detected objects...")
+    annotated_frame = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
+    annotated_frame = annotated_frame[...,::-1]
+
     sam_predictor.set_image(image_source)
+
+    H, W, _ = image_source.shape
     boxes_xyxy = box_ops.box_cxcywh_to_xyxy(boxes) * torch.Tensor([W, H, W, H])
+
     transformed_boxes = sam_predictor.transform.apply_boxes_torch(boxes_xyxy, image_source.shape[:2]).to(DEVICE)
-    
-    masks, iou_pred, _ = sam_predictor.predict_torch(
-        point_coords=None,
-        point_labels=None,
-        boxes=transformed_boxes,
-        multimask_output=True, # Keep True for multiple mask options
+    masks, _, _ = sam_predictor.predict_torch(
+        point_coords = None,
+        point_labels = None,
+        boxes = transformed_boxes,
+        multimask_output = False,
     )
 
-    print("Annotating image with masks and bounding boxes...")
-    
-    # Start with the original image for applying masks
-    annotated_frame_with_mask = Image.fromarray(image_source).convert("RGBA")
-    annotated_frame_with_mask = np.array(annotated_frame_with_mask) # Convert back to numpy
+    annotated_frame_with_mask = draw_mask(masks[0][0], annotated_frame)
 
-    # Define color map for different objects
-    color_map = {
-        "pipe": np.array([30/255, 144/255, 255/255, 0.6]),      # Blue for pipe
-        "defect": np.array([255/255, 0/255, 0/255, 0.7]),        # Red for defect
-    }
-    default_color = np.array([0/255, 255/255, 0/255, 0.6]) # Green for anything else
+    output_image_pil = Image.fromarray(annotated_frame_with_mask)
 
-
-    detections_to_draw = []
-    if boxes.shape[0] > 0:
-        for i in range(boxes.shape[0]):
-            phrase = phrases[i]
-            
-            # Select the best mask out of the 3 options using IoU prediction
-            best_mask_idx = torch.argmax(iou_pred[i]).item()
-            selected_mask = masks[i, best_mask_idx]
-            
-            detections_to_draw.append((phrase, i, selected_mask))
-
-        def get_draw_order_priority(phrase):
-            if "pipe" in phrase: return 0 # Draw pipe first (bottom layer)
-            if "defect" in phrase: return 1 # Draw defect second (on top)
-            return 99 # Anything else last
-
-        detections_to_draw.sort(key=lambda x: get_draw_order_priority(x[0]))
-        
-        for phrase, original_box_idx, selected_mask in detections_to_draw:
-            color = color_map.get(phrase, default_color)
-            
-            # Apply the mask with the chosen color
-            annotated_frame_with_mask = apply_mask_to_image(selected_mask, annotated_frame_with_mask, color)
-    else:
-        print("No objects detected for the given prompt and thresholds.")
-    
-    # MODIFICATION: Apply bounding box annotation *after* masks have been drawn
-    # The 'annotate' function expects a BGR image, so convert before passing.
-    # It also outputs BGR, so convert back to RGB for saving.
-    annotated_frame_with_mask_bgr = annotated_frame_with_mask[..., ::-1] # RGB to BGR
-    final_annotated_image = annotate(
-        image_source=annotated_frame_with_mask_bgr, 
-        boxes=boxes, 
-        logits=logits, 
-        phrases=phrases
-    )
-    final_annotated_image = final_annotated_image[..., ::-1] # BGR to RGB
-
-
-    os.makedirs(args.output_dir, exist_ok=True)
-    
-    base_name = os.path.basename(args.input_image)
+    base_name = os.path.basename(image_path)
     name, ext = os.path.splitext(base_name)
-    output_path = os.path.join(args.output_dir, f"{name}_multi_annotated_with_boxes.png") # New filename
+    output_filename = f"{name}_masked.png"
+    output_path = os.path.join(args.output_dir, output_filename)
 
-    final_image_pil = Image.fromarray(final_annotated_image) # Use the image with boxes
-    final_image_pil.save(output_path)
-    
-    print(f"✅ Annotated image with masks and bounding boxes saved successfully to: {output_path}")
+    output_image_pil.save(output_path)
+
+    print("Saved masked image")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("GroundingDINO-SAM Multi-Object Segmentation")
