@@ -62,36 +62,6 @@ groundingdino_model = load_model_hf(ckpt_repo_id, ckpt_filenmae, ckpt_config_fil
 sam_checkpoint = 'model/sam_vit_h_4b8939.pth'
 sam_predictor = SamPredictor(build_sam(checkpoint=sam_checkpoint).to(DEVICE))
 
-# # detect object using grounding DINO
-# def detect(image, text_prompt, model, box_threshold = 0.3, text_threshold = 0.25):
-#   boxes, logits, phrases = predict(
-#       model=model, 
-#       image=image, 
-#       caption=text_prompt,
-#       box_threshold=box_threshold,
-#       text_threshold=text_threshold
-#   )
-
-#   annotated_frame = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
-#   annotated_frame = annotated_frame[...,::-1] # BGR to RGB 
-#   return annotated_frame, boxes 
-# annotated_frame, detected_boxes = detect(image, text_prompt="bench", model=groundingdino_model)
-# Image.fromarray(annotated_frame)
-
-# def segment(image, sam_model, boxes):
-#   sam_model.set_image(image)
-#   H, W, _ = image.shape
-#   boxes_xyxy = box_ops.box_cxcywh_to_xyxy(boxes) * torch.Tensor([W, H, W, H])
-
-#   transformed_boxes = sam_model.transform.apply_boxes_torch(boxes_xyxy.to(device), image.shape[:2])
-#   masks, _, _ = sam_model.predict_torch(
-#       point_coords = None,
-#       point_labels = None,
-#       boxes = transformed_boxes,
-#       multimask_output = False,
-#       )
-#   return masks.cpu()
-
 def draw_mask(mask, image, random_color=True):
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.8])], axis=0)
@@ -112,8 +82,8 @@ def main(args):
     image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
 
     prompt = args.text_prompt
-    box_threshold = 0.3
-    text_threshold = 0.25
+    box_threshold = args.box_threshold
+    text_threshold = args.text_threshold
 
     image_source, image = load_image(image_path)
 

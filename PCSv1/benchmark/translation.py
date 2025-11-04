@@ -59,11 +59,9 @@ def main():
     parser.add_argument("input_file", help="Path to the input .las or .laz file.")
     parser.add_argument("output_dir", help="Directory to save the output image.")
     parser.add_argument("--type", choices=['ortho', 'spherical'], default='ortho', help="Type of image to generate. Default is 'ortho'.")
-    # ⭐️ FIX 1: Remove the single default and improve the help text.
     parser.add_argument("--res", type=float, default=None, help="Resolution. For 'ortho': meters/pixel (e.g., 0.1). For 'spherical': vertical pixels (e.g., 500).")
     args = parser.parse_args()
 
-    # ⭐️ FIX 2: Set a smart, type-specific default resolution if none is provided.
     resolution = args.res
     if resolution is None:
         if args.type == 'ortho':
@@ -92,12 +90,10 @@ def main():
 
     image = None
     if args.type == 'ortho':
-        # ⭐️ FIX 3: Use the new 'resolution' variable.
         print(f"Generating orthographic image with resolution {resolution} m/pixel...")
         pcd_with_colors = np.hstack((points, colors))
         image = cloud_to_image(pcd_with_colors, resolution=resolution)
     elif args.type == 'spherical':
-        # ⭐️ FIX 3: Use the new 'resolution' variable.
         print(f"Generating spherical image with vertical resolution {int(resolution)} pixels...")
         center = np.mean(points, axis=0)
         image, _ = generate_spherical_image(center, points, colors, resolution_y=int(resolution))
@@ -109,7 +105,7 @@ def main():
         
         image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         cv2.imwrite(output_path, image_bgr)
-        print(f"✅ Successfully saved image to: {output_path}")
+        print(f"Successfully saved image to: {output_path}")
     else:
         print("Image generation failed.")
 
