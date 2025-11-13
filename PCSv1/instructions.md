@@ -10,9 +10,9 @@ The process is two-stage:
 # Step 1: Conda Environment Setup
 
 First, create and activate the conda environment using the provided requirements file.
-Make sure you are in the project's root directory
-<!-- ```conda env create --name PCSv1 --file requirements.txt
-conda activate PCSv1``` -->
+Make sure you are in the project's root directory    
+conda env create --name PCSv1 --file environment.yml           
+conda activate PCSv1
 
 You will also need to download the model checkpoints. Based on segmentation.py, you need:
 
@@ -31,7 +31,7 @@ Use the translation.py script to create the 2D image and the XYZ-RGB data file.
 Command:
 Bash
 
-python translation.py [path_to_input_las] [path_to_output_dir] --type ortho --res [resolution] --export_csv
+```python translation.py [path_to_input_las] [path_to_output_dir] --type ortho --res [resolution] --export_csv```
 
 Example: This command reads a .las file, creates a directory named output/, and saves both an image and a CSV file inside it.
 Bash
