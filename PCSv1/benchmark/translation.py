@@ -1,43 +1,37 @@
-# Base Libraries
 import numpy as np
-import matplotlib.pyplot as plt
 import cv2
 import laspy
 import argparse
 import os
-import csv  # <-- 1. Added this import
+import csv
 
-def cloud_to_image(pcd_np, resolution):
-    """
-    Generates a top-down orthographic image from a point cloud.
-    Assumes the last 3 columns of pcd_np are RGB colors.
-    """
-    minx = np.min(pcd_np[:, 0])
-    maxx = np.max(pcd_np[:, 0])
-    miny = np.min(pcd_np[:, 1])
-    maxy = np.max(pcd_np[:, 1])
+def cloud_to_image(pcd_np, colors_np, resolution):
+    """ Generates a top-down orthographic image. """
+    minx, maxx = np.min(pcd_np[:, 0]), np.max(pcd_np[:, 0])
+    miny, maxy = np.min(pcd_np[:, 1]), np.max(pcd_np[:, 1])
     width = int((maxx - minx) / resolution) + 1
     height = int((maxy - miny) / resolution) + 1
+    
     image = np.zeros((height, width, 3), dtype=np.uint8)
-    for point in pcd_np:
-        x, y, *_ = point
-        r, g, b = point[-3:]
-        pixel_x = int((x - minx) / resolution)
-        pixel_y = int((maxy - y) / resolution)
-        if 0 <= pixel_y < height and 0 <= pixel_x < width:
-            image[height - 1 - pixel_y, pixel_x] = [r, g, b]
+    
+    pixel_x = ((pcd_np[:, 0] - minx) / resolution).astype(int)
+    pixel_y = ((maxy - pcd_np[:, 1]) / resolution).astype(int)
+    
+    valid_mask = (pixel_x >= 0) & (pixel_x < width) & (pixel_y >= 0) & (pixel_y < height)
+    image[height - 1 - pixel_y[valid_mask], pixel_x[valid_mask]] = colors_np[valid_mask]
+    
     return image
 
 def generate_spherical_image(center_coordinates, point_cloud, colors, resolution_y=500):
-    """
-    Generates a spherical (equirectangular) projection image from a point cloud.
-    """
+    """ Generates a spherical (equirectangular) projection image. """
     resolution_x = 2 * resolution_y
     image = np.zeros((resolution_y, resolution_x, 3), dtype=np.uint8)
     depth_buffer = np.full((resolution_y, resolution_x), np.inf, dtype=float)
 
     translated_points = point_cloud - center_coordinates
     xy_dist = np.hypot(translated_points[:, 0], translated_points[:, 1])
+    xy_dist[xy_dist == 0] = 1e-6 
+    
     theta = np.arctan2(translated_points[:, 1], translated_points[:, 0])
     phi = np.arctan2(translated_points[:, 2], xy_dist)
 
@@ -47,106 +41,92 @@ def generate_spherical_image(center_coordinates, point_cloud, colors, resolution
     y_px = ((1 - v) * (resolution_y - 1)).astype(int)
 
     distances = np.linalg.norm(translated_points, axis=1)
+    
     for i in range(len(translated_points)):
         ix, iy = x_px[i], y_px[i]
-        if distances[i] < depth_buffer[iy, ix]:
-            depth_buffer[iy, ix] = distances[i]
-            image[iy, ix] = colors[i]
+        if 0 <= ix < resolution_x and 0 <= iy < resolution_y:
+            if distances[i] < depth_buffer[iy, ix]:
+                depth_buffer[iy, ix] = distances[i]
+                image[iy, ix] = colors[i]
             
     return image, None
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate an image and/or CSV from a .las or .laz point cloud file.")
-    parser.add_argument("input_file", help="Path to the input .las or .laz file.")
-    parser.add_argument("output_dir", help="Directory to save the output image.")
-    parser.add_argument("--type", choices=['ortho', 'spherical'], default='ortho', help="Type of image to generate. Default is 'ortho'.")
-    parser.add_argument("--res", type=float, default=None, help="Resolution. For 'ortho': meters/pixel (e.g., 0.1). For 'spherical': vertical pixels (e.g., 500).")
-    
-    # <-- 2. Added new argument -->
-    parser.add_argument("--export_csv", action="store_true", help="Also export the XYZ and RGB data to a CSV file.")
-    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_file", help="Path to input .las file.")
+    parser.add_argument("output_dir", help="Output directory.")
+    parser.add_argument("--type", choices=['ortho', 'spherical'], default='ortho')
+    parser.add_argument("--res", type=float, default=None)
+    parser.add_argument("--export_csv", action="store_true", help="Export data to CSV.")
     args = parser.parse_args()
 
     resolution = args.res
     if resolution is None:
-        if args.type == 'ortho':
-            resolution = 0.1
-            print(f"No resolution provided. Using default for 'ortho': {resolution} m/pixel.")
-        elif args.type == 'spherical':
-            resolution = 500  # A sensible default for spherical images
-            print(f"No resolution provided. Using default for 'spherical': {resolution} pixels.")
+        resolution = 0.1 if args.type == 'ortho' else 1000
 
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
-        print(f"Created output directory: {args.output_dir}")
 
-    print(f"Loading point cloud from: {args.input_file}")
-    las = laspy.read(args.input_file)
-    
-    # Get XYZ coordinates
+    print(f"Loading {args.input_file}...")
+    try:
+        las = laspy.read(args.input_file)
+    except Exception as e:
+        print(f"Error reading LAS: {e}")
+        return
+
     points = np.vstack((las.x, las.y, las.z)).transpose()
     
-    # Get color data (scales 16-bit to 8-bit if needed)
+    # --- Colors ---
     if hasattr(las, 'red'):
-        colors = (np.vstack((las.red, las.green, las.blue)).transpose() / 256).astype(np.uint8)
+        raw_colors = np.vstack((las.red, las.green, las.blue)).transpose()
+        if np.max(las.red) > 255:
+            image_colors = (raw_colors / 256).astype(np.uint8)
+        else:
+            image_colors = raw_colors.astype(np.uint8)
     else:
-        print("Warning: No color data found. Using grayscale based on Z-value for CSV and image.")
+        # Grayscale fallback
         z = points[:, 2]
         norm_z = (z - np.min(z)) / (np.max(z) - np.min(z))
-        gray_values = (norm_z * 255).astype(np.uint8)
-        colors = np.vstack((gray_values, gray_values, gray_values)).transpose()
+        gray = (norm_z * 255).astype(np.uint8)
+        raw_colors = np.vstack((gray, gray, gray)).transpose() # stored as 8-bit in this case
+        image_colors = raw_colors
 
-    # Get base filename for outputs
+    # --- Classification ---
+    if hasattr(las, 'classification'):
+        classification = np.array(las.classification).reshape(-1, 1)
+    else:
+        classification = np.zeros((len(points), 1), dtype=np.uint8)
+
     basename = os.path.splitext(os.path.basename(args.input_file))[0]
 
-    # <-- 3. Added CSV Export Block -->
+    # --- CSV Export ---
     if args.export_csv:
-        print("Exporting data to CSV...")
-        output_csv_filename = f"{basename}_data.csv"
-        output_csv_path = os.path.join(args.output_dir, output_csv_filename)
+        out_csv = os.path.join(args.output_dir, f"{basename}_data.csv")
+        print(f"Exporting CSV to {out_csv}...")
         
-        csv_header = ['x', 'y', 'z', 'red', 'green', 'blue']
-
+        header = ['X', 'Y', 'Z', 'Red', 'Green', 'Blue', 'Classification']
+        data = np.hstack((points, raw_colors, classification))
+        
         try:
-            # Combine XYZ and RGB data horizontally
-            # (N, 3) + (N, 3) -> (N, 6)
-            combined_data = np.hstack((points, colors))
-            
-            print(f"Writing {len(combined_data)} points to {output_csv_path}...")
-            
-            with open(output_csv_path, 'w', newline='') as f:
+            with open(out_csv, 'w', newline='') as f:
                 writer = csv.writer(f)
-                # Write the header row
-                writer.writerow(csv_header)
-                # Write all data rows efficiently
-                writer.writerows(combined_data)
-
-            print(f"Successfully saved CSV data to: {output_csv_path}")
-
+                writer.writerow(header)
+                writer.writerows(data)
         except Exception as e:
-            print(f"Error: Failed to write CSV file. {e}")
-    # <-- End of CSV Export Block -->
+            print(f"CSV Error: {e}")
 
-    # --- Existing Image Generation Logic (Unchanged) ---
-    image = None
+    # --- Image Gen ---
+    img = None
     if args.type == 'ortho':
-        print(f"Generating orthographic image with resolution {resolution} m/pixel...")
-        pcd_with_colors = np.hstack((points, colors))
-        image = cloud_to_image(pcd_with_colors, resolution=resolution)
+        img = cloud_to_image(points, image_colors, resolution)
     elif args.type == 'spherical':
-        print(f"Generating spherical image with vertical resolution {int(resolution)} pixels...")
         center = np.mean(points, axis=0)
-        image, _ = generate_spherical_image(center, points, colors, resolution_y=int(resolution))
+        img, _ = generate_spherical_image(center, points, image_colors, int(resolution))
 
-    if image is not None:
-        output_filename = f"{basename}_{args.type}.png"
-        output_path = os.path.join(args.output_dir, output_filename)
-        
-        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        cv2.imwrite(output_path, image_bgr)
-        print(f"Successfully saved image to: {output_path}")
-    else:
-        print("Image generation failed.")
+    if img is not None:
+        out_img = os.path.join(args.output_dir, f"{basename}_{args.type}.png")
+        cv2.imwrite(out_img, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        print(f"Saved image to {out_img}")
 
 if __name__ == "__main__":
     main()
