@@ -4,6 +4,7 @@ sam_vit_h_4b8939.pth
 *.ipynb_checkpoints/
 *.las
 *.ply
+*.csv
 
 # Ignore large video files in the videos/ directory
 # These are downloaded during the Docker build process
