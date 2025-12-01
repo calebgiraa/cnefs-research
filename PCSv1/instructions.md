@@ -19,6 +19,7 @@ You will also need to download the model checkpoints. Based on segmentation.py, 
     GroundingDINO (will be downloaded by hf_hub_download on first run)
 
     SAM: Download sam_vit_h_4b8939.pth and place it in a model/ directory, or update the path in segmentation.py.
+    wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 
 Step 2: Running the Workflow
 
