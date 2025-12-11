@@ -1,0 +1,2 @@
+set(__QT_DEPLOY_TARGET_euclidean_cluster_FILE /home/cmgira/cnefs-research/PCSv1/testing_pcl/build/euclidean_cluster)
+set(__QT_DEPLOY_TARGET_euclidean_cluster_TYPE EXECUTABLE)

@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/cmgira/cnefs-research/PCSv1/testing_pcl/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
