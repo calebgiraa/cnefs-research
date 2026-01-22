@@ -7,18 +7,18 @@ The process is two-stage:
 
 - Segmentation: Run an object detection model (GroundingDINO + SAM) on the generated image to find and mask specific objects.
 
-# Step 1: Conda Environment Setup
+# Step 1: Mamba Environment Setup
 
 First, create and activate the conda environment using the provided requirements file.
 Make sure you are in the project's root directory    
-conda env create --name PCSv1 --file environment.yml           
-conda activate PCSv1
+mamba env create -f environment.yml
+mamba activate PCSv1
 
 You will also need to download the model checkpoints. Based on segmentation.py, you need:
 
-    GroundingDINO (will be downloaded by hf_hub_download on first run)
+    GroundingDINO (already within repository)
 
-    SAM: Download sam_vit_h_4b8939.pth and place it in a model/ directory, or update the path in segmentation.py.
+    SAM: Navigate to the model directory, and run the following command:
     wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 
 Step 2: Running the Workflow
@@ -27,6 +27,7 @@ Follow these steps in order.
 
 Step 2.1: Generate Image and Data from Point Cloud
 
+**Note:** This is with the expectation that you have your own cloud point data, in the las format.
 Use the translation.py script to create the 2D image and the XYZ-RGB data file.
 
 Command:
