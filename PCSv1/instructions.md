@@ -33,7 +33,7 @@ Use the translation.py script to create the 2D image and the XYZ-RGB data file.
 Command:
 Bash
 
-```python translation.py [path_to_input_las] [path_to_output_dir] --type ortho --res [resolution] --export_csv```
+```python translation.py [path_to_input_las] [path_to_output_dir] --type spherical --res [resolution] --export_csv```
 
 Example: This command reads a .las file, creates a directory named output/, and saves both an image and a CSV file inside it.
 Bash
@@ -42,7 +42,7 @@ Bash
 mkdir -p output
 
 # Run the translation script
-python translation.py ./input_lidar/Lab1_Scan_125.las ./output/ --type ortho --res 0.10 --export_csv
+python translation.py ./input_lidar/Lab1_Scan_125.las ./output/ --type spherical --res 1000 --export_csv
 
 Expected Output: This will create two files in the output/ directory:
 
