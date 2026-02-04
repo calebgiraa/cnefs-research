@@ -99,10 +99,12 @@ You can adjust the segmentation.py script with these optional arguments:
 # Reconstructing the Labeled Point Cloud
 Command:
 Bash
+
 ```python reverse_translation.py [path_to_labeled.csv] [path_to_output_dir]```
 
 Example:
 Bash
+
 ```python reverse_translation.py ./output/Lab1_Scan_125_data_labeled.csv ./output/```
 
 Expected Output: A new, labeled point cloud will be created in the output directory
