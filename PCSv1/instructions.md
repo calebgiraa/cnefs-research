@@ -108,4 +108,5 @@ Bash
 ```python reverse_translation.py ./output/Lab1_Scan_125_data_labeled.csv ./output/```
 
 Expected Output: A new, labeled point cloud will be created in the output directory
+
 **Verification**: Open this new .las file in your point cloud viewer. The points detected as objects (e.g., pipes) will now have a Classification ID of 64. You can filter or colorize by classification to isolate them.
