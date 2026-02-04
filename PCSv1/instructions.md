@@ -21,7 +21,7 @@ You will also need to download the model checkpoints. Based on segmentation.py, 
     SAM: Navigate to the model directory, and run the following command:
     wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
 
-Step 2: Running the Workflow
+# Step 2: Running the Workflow
 
 Follow these steps in order.
 
@@ -50,7 +50,7 @@ Expected Output: This will create two files in the output/ directory:
 
     output/Lab1_Scan_125_data.csv (The XYZ-RGB data)
 
-Step 2.2: Segment Objects in the Image
+# Segment Objects in the Image
 
 Next, use the segmentation.py script to find objects in the .png image you just created.
 
@@ -95,3 +95,15 @@ You can adjust the segmentation.py script with these optional arguments:
         Default: 0.28
 
         Tip: Lower this if the model is failing to label an object it clearly boxed.
+
+# Reconstructing the Labeled Point Cloud
+Command:
+Bash
+```python reverse_translation.py [path_to_labeled.csv] [path_to_output_dir]```
+
+Example:
+Bash
+```python reverse_translation.py ./output/Lab1_Scan_125_data_labeled.csv ./output/```
+
+Expected Output: A new, labeled point cloud will be created in the output directory
+**Verification**: Open this new .las file in your point cloud viewer. The points detected as objects (e.g., pipes) will now have a Classification ID of 64. You can filter or colorize by classification to isolate them.
