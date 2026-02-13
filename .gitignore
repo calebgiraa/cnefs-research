@@ -2,7 +2,7 @@ sam_vit_h_4b8939.pth
 *.pth
 *.ckpt
 *.ipynb_checkpoints/
-*.las
+*.las*
 *.ply
 *.csv
 
