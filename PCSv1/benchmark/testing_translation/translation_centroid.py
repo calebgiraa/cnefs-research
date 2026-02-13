@@ -1,16 +1,10 @@
 import numpy as np
+import pandas as pd  # Make sure this is imported
 import cv2
 import laspy
 import argparse
 import os
-import csv
 import math
-
-"""
-Currently looking at different translation methods that create three different images at various angles. This particular script seems
-to have issues regarding it's centroid, as it's centered around the scanner rather than the pipe. A solution to this may be segmented the image and
-translating again after knowing the point where the pipe exists
-"""
 
 def cloud_to_image(pcd_np, colors_np, resolution):
     """ Generates a top-down orthographic image. """
@@ -113,21 +107,31 @@ def main():
         gray = (norm_z * 255).astype(np.uint8)
         image_colors = np.vstack((gray, gray, gray)).transpose()
 
+    # --- Classification ---
+    if hasattr(las, 'classification'):
+        classification = np.array(las.classification).reshape(-1, 1)
+    else:
+        classification = np.zeros((len(points), 1), dtype=np.uint8)
+
     basename = os.path.splitext(os.path.basename(args.input_file))[0]
 
-    # --- CSV Export ---
+    # --- CSV Export (Fixed & Optimized) ---
     if args.export_csv:
         out_csv = os.path.join(args.output_dir, f"{basename}_data.csv")
-        print(f"Exporting CSV to {out_csv}...")
-        header = ['X', 'Y', 'Z', 'Red', 'Green', 'Blue']
-        data = np.hstack((points, image_colors))
+        print(f"Exporting CSV to {out_csv} (this may take a moment)...")
+        
+        header = ['X', 'Y', 'Z', 'Red', 'Green', 'Blue', 'Classification']
+        
+        # 1. We must CREATE 'data' before we can use it
+        data = np.hstack((points, image_colors, classification))
+        
+        # 2. Use Pandas to write (Fast C-engine)
         try:
-            with open(out_csv, 'w', newline='') as f:
-                writer = csv.writer(f)
-                writer.writerow(header)
-                writer.writerows(data)
+            df = pd.DataFrame(data, columns=header)
+            df.to_csv(out_csv, index=False)
+            print(f"Done! Saved CSV to {out_csv}")
         except Exception as e:
-            print(f"CSV Error: {e}")
+            print(f"Error writing CSV: {e}")
 
     # --- Image Generation ---
     if args.type == 'ortho':
@@ -142,13 +146,12 @@ def main():
         centroid = np.mean(points, axis=0)
         
         # 2. Determine Scale (Robust Radius)
-        # We calculate the distance of every point from the center
         dists = np.linalg.norm(points - centroid, axis=1)
         
         # KEY FIX: Use 90th percentile to ignore distant noise/outliers
         robust_max_dist = np.percentile(dists, 90)
         
-        # Apply user multiplier (defaults to 0.5 to keep camera "inside" the room)
+        # Apply user multiplier
         orbit_radius = robust_max_dist * args.radius_mult
 
         print(f"Centroid: {centroid}")
@@ -163,9 +166,7 @@ def main():
             offset_x = orbit_radius * math.cos(angle_rad)
             offset_y = orbit_radius * math.sin(angle_rad)
             
-            # Camera Position:
-            # X, Y are offset based on the circle
-            # Z stays at the centroid height (or you can nudge it up/down)
+            # Camera Position
             camera_pos = np.array([centroid[0] + offset_x, centroid[1] + offset_y, centroid[2]])
             
             print(f"Rendering Angle {angle_deg}° at {camera_pos}...")
