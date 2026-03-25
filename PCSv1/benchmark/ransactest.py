@@ -67,6 +67,24 @@ def load_point_cloud(file_path: str) -> o3d.geometry.PointCloud:
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(xyz)
 
+    classifications = np.asarray(las.classification)
+    
+    if len(classifications) > 0:
+        max_class = classifications.max()
+        np.random.seed(42)
+        palette = np.random.uniform(0.0, 1.0, size=(max_class + 1, 3))
+
+        point_colors = palette[classifications]
+        pcd.colors = o3d.utility.Vector3dVector(point_colors)
+    else:
+        print("No classifiers found in file.")
+    
+    TARGET_CLASS = 64
+
+    pipe_indices = np.where(classifications == TARGET_CLASS)[0]
+
+    pcd = pcd.select_by_index(pipe_indices)
+
 
     print(f"      Loaded {len(pcd.points):,} points in {time.perf_counter()-t0:.2f}s.")
     return pcd
@@ -390,6 +408,9 @@ def main() -> None:
     cluster_pcd, cluster_pts = find_largest_cluster(
         working_pcd, args.epsilon, args.min_points
     )
+
+    print("\nVisualizing the isolated cluster (close the window to continue)...")
+    o3d.visualization.draw_geometries([cluster_pcd])
 
 
     fit_cylinder(
