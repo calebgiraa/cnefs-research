@@ -56,11 +56,19 @@ def generate_equirectangular(camera_pos, target, points, colors, resolution_y):
 
     dist = np.linalg.norm(cam_points, axis=1)
 
+    depth_buffer = np.full((resolution_y, resolution_x), np.inf)
+
     for i in range(len(px)):
         if 0 <= px[i] < resolution_x and 0 <= py[i] < resolution_y:
-            if dist[i] < depth[py[i], px[i]]:
-                depth[py[i], px[i]] = dist[i]
-                image[py[i], px[i]] = colors[i]
+            if dist[i] < depth_buffer[py[i], px[i]]:
+                cv2.circle(image, (px[i], py[i]), radius=2, color=colors[i].tolist(), thickness=-1)
+                depth_buffer[py[i], px[i]] = dist[i]
+
+    # for i in range(len(px)):
+    #     if 0 <= px[i] < resolution_x and 0 <= py[i] < resolution_y:
+    #         if dist[i] < depth[py[i], px[i]]:
+    #             depth[py[i], px[i]] = dist[i]
+    #             image[py[i], px[i]] = colors[i]
 
     return image
 
@@ -135,6 +143,18 @@ def main():
             colors=colors,
             resolution_y=args.res
         )
+
+        # 1. Convert to BGR for OpenCV operations if it isn't already
+        img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+
+        #    2. Create a kernel for morphology (3x3 or 5x5)
+        kernel = np.ones((3, 3), np.uint8)
+
+        # 3. Apply Closing: This fills small black holes inside objects
+        img_bgr = cv2.morphologyEx(img_bgr, cv2.MORPH_CLOSE, kernel)
+
+        # 4. Apply a slight Blur: This softens the 'digital' edges for the AI
+        img_bgr = cv2.GaussianBlur(img_bgr, (3, 3), 0)
 
         out_path = os.path.join(args.output_dir, f"{basename}_equirect_{angle}.png")
         cv2.imwrite(out_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))

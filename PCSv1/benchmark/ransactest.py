@@ -77,7 +77,7 @@ def load_point_cloud(file_path: str) -> o3d.geometry.PointCloud:
         point_colors = palette[classifications]
         pcd.colors = o3d.utility.Vector3dVector(point_colors)
     else:
-        print("No classifiers found in file.")
+        print("      No classifiers found in file.")
     
     TARGET_CLASS = 64
 
