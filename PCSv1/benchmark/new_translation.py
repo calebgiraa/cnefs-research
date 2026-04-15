@@ -29,46 +29,35 @@ def look_at_rotation(camera_pos, target, up=np.array([0, 0, 1])):
 
 def generate_equirectangular(camera_pos, target, points, colors, resolution_y):
     resolution_x = resolution_y * 2
-
     image = np.zeros((resolution_y, resolution_x, 3), dtype=np.uint8)
-    depth = np.full((resolution_y, resolution_x), np.inf)
+    # Track depth to ensure foreground points cover background points
+    depth_buffer = np.full((resolution_y, resolution_x), np.inf)
 
-    # Transform to camera space
     R = look_at_rotation(camera_pos, target)
     cam_points = (points - camera_pos) @ R.T
 
     x, y, z = cam_points[:, 0], cam_points[:, 1], cam_points[:, 2]
-
-    # Discard points behind camera
     valid = x > 0
-    x, y, z = x[valid], y[valid], z[valid]
-    colors = colors[valid]
-    cam_points = cam_points[valid]
-
-    theta = np.arctan2(y, x)  # yaw
-    phi = np.arctan2(z, np.sqrt(x**2 + y**2))  # pitch
-
+    
+    # Projection math
+    theta = np.arctan2(y[valid], x[valid])
+    phi = np.arctan2(z[valid], np.sqrt(x[valid]**2 + y[valid]**2))
     u = (theta + np.pi) / (2 * np.pi)
     v = (np.pi / 2 - phi) / np.pi
 
     px = (u * (resolution_x - 1)).astype(int)
     py = (v * (resolution_y - 1)).astype(int)
+    dist = np.linalg.norm(cam_points[valid], axis=1)
+    valid_colors = colors[valid]
 
-    dist = np.linalg.norm(cam_points, axis=1)
-
-    depth_buffer = np.full((resolution_y, resolution_x), np.inf)
-
+    # Splatting Loop: Using radius=3 to ensure a solid surface
     for i in range(len(px)):
-        if 0 <= px[i] < resolution_x and 0 <= py[i] < resolution_y:
-            if dist[i] < depth_buffer[py[i], px[i]]:
-                cv2.circle(image, (px[i], py[i]), radius=2, color=colors[i].tolist(), thickness=-1)
-                depth_buffer[py[i], px[i]] = dist[i]
-
-    # for i in range(len(px)):
-    #     if 0 <= px[i] < resolution_x and 0 <= py[i] < resolution_y:
-    #         if dist[i] < depth[py[i], px[i]]:
-    #             depth[py[i], px[i]] = dist[i]
-    #             image[py[i], px[i]] = colors[i]
+        ix, iy = px[i], py[i]
+        if 0 <= ix < resolution_x and 0 <= iy < resolution_y:
+            if dist[i] < depth_buffer[iy, ix]:
+                # Drawing a circle 'splats' the point into a solid disk
+                cv2.circle(image, (ix, iy), radius=3, color=valid_colors[i].tolist(), thickness=-1)
+                depth_buffer[iy, ix] = dist[i]
 
     return image
 
@@ -81,7 +70,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input_file", help="Path to input .las file.")
     parser.add_argument("output_dir", help="Output directory.")
-    parser.add_argument("--res", type=int, default=1000, help="Vertical resolution (height). Width = 2x.")
+    parser.add_argument("--res", type=int, default=1500, help="Vertical resolution (height). Width = 2x.")
     parser.add_argument("--radius_mult", type=float, default=0.5)
     parser.add_argument("--export_csv", action="store_true")
     args = parser.parse_args()
@@ -136,7 +125,7 @@ def main():
         ])
 
         print(f"Rendering {angle}° view...")
-        img = generate_equirectangular(
+        img_rgb = generate_equirectangular(
             camera_pos=cam_pos,
             target=centroid,
             points=points,
@@ -144,22 +133,22 @@ def main():
             resolution_y=args.res
         )
 
-        # 1. Convert to BGR for OpenCV operations if it isn't already
-        img_bgr = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        # 1. Convert to BGR for OpenCV
+        img_final = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
 
-        #    2. Create a kernel for morphology (3x3 or 5x5)
-        kernel = np.ones((3, 3), np.uint8)
+        # 2. Morphological Closing: Fills in the remaining 'Swiss Cheese' pinholes
+        # Using a 5x5 kernel for better gap filling
+        kernel = np.ones((5, 5), np.uint8)
+        img_final = cv2.morphologyEx(img_final, cv2.MORPH_CLOSE, kernel)
 
-        # 3. Apply Closing: This fills small black holes inside objects
-        img_bgr = cv2.morphologyEx(img_bgr, cv2.MORPH_CLOSE, kernel)
-
-        # 4. Apply a slight Blur: This softens the 'digital' edges for the AI
-        img_bgr = cv2.GaussianBlur(img_bgr, (3, 3), 0)
+        # 3. Gaussian Blur: Softens the digital noise for the AI
+        img_final = cv2.GaussianBlur(img_final, (3, 3), 0)
 
         out_path = os.path.join(args.output_dir, f"{basename}_equirect_{angle}.png")
-        cv2.imwrite(out_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+        
+        # 4. Save the processed BGR image
+        cv2.imwrite(out_path, img_final)
         print(f"Saved {out_path}")
 
 if __name__ == "__main__":
     main()
-    

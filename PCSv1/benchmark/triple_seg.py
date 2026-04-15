@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import gc
 from PIL import Image
+import cv2
 
 # Paths setup
 sys.path.append(os.path.join(os.getcwd(), "GroundingDINO"))
@@ -116,7 +117,7 @@ def main(args):
     detections = [] # Store results to pass to SAM
     
     for angle_deg in angles:
-        img_path = os.path.join(args.image_dir, f"{base_name}_angle_{angle_deg}.png")
+        img_path = os.path.join(args.image_dir, f"{base_name}_equirect_{angle_deg}.png")
         if not os.path.exists(img_path):
             continue
 
@@ -125,6 +126,17 @@ def main(args):
             model=dino_model, image=image, caption=args.text_prompt,
             box_threshold=args.box_threshold, text_threshold=args.text_threshold, device=DEVICE
         )
+
+        # --- ADD THIS SECTION TO VISUALIZE ---
+        if len(boxes) > 0:
+            # Create an annotated image with boxes and labels
+            annotated_frame = annotate(image_source=image_source, boxes=boxes, logits=logits, phrases=phrases)
+        
+            # Save the visualization to your output directory
+            vis_path = os.path.join(args.output_dir, f"vis_{base_name}_{angle_deg}.png")
+            cv2.imwrite(vis_path, annotated_frame)
+            print(f"  Saved detection visualization to: {vis_path}")
+            # -------------------------------------
         print(f"  Angle {angle_deg}: Found {len(boxes)} objects.")
 
         if len(boxes) > 0:
