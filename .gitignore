@@ -24,3 +24,5 @@ NFOD_v2/Datasets/**/*.gif
 NFOD_v2/Datasets/**/*.bmp
 NFOD_v2/Datasets/**/*.tiff
 PCSv1/testing_pcl/build/output_file.pcd
+
+*.env
