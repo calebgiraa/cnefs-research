@@ -1,0 +1,4 @@
+# target 4.457615 5.670849 -0.068200 4.000000
+./output/Lab1total_view_0.png ./output/Lab1total_index_map_0.npy
+./output/Lab1total_view_1.png ./output/Lab1total_index_map_1.npy
+./output/Lab1total_view_2.png ./output/Lab1total_index_map_2.npy

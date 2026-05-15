@@ -442,6 +442,13 @@ def select_best_pose(results):
     results = sorted(results, key=lambda r: r["J_total"])
     return results[0]
 
+def select_top_k_poses(results, k):
+    """
+    Return the k lowest-cost poses from evaluate_poses results.
+    """
+    sorted_results = sorted(results, key=lambda r: r["J_total"])
+    return sorted_results[:min(k, len(sorted_results))]
+
 def project_pinhole(
     points,
     colors,

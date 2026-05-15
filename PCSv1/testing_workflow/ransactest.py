@@ -28,10 +28,10 @@ import open3d as o3d
 # Defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_VOXEL_SIZE    = 0.05
-DEFAULT_EPSILON       = 0.5
+DEFAULT_VOXEL_SIZE    = 0.01
+DEFAULT_EPSILON       = 0.08
 DEFAULT_MIN_POINTS    = 100
-DEFAULT_RANSAC_THRESH = 0.01
+DEFAULT_RANSAC_THRESH = 0.005
 DEFAULT_RANSAC_ITERS  = 1000
 DEFAULT_FIT_SAMPLES   = 8_000
 TARGET_CLASS          = 64
